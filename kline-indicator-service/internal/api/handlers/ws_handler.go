@@ -177,6 +177,13 @@ func (h *WSHandler) handleSubscribe(client *WSClient, data json.RawMessage) {
 		Data:      map[string]int{"count": len(subData.Stocks)},
 		Timestamp: time.Now().Format(time.RFC3339),
 	})
+
+	// 订阅后立即推送一次最新指标数据（不受交易时间限制）
+	go func() {
+		for _, stock := range subData.Stocks {
+			h.pushIndicatorToClient(client, stock.Market, stock.Code, stock.KLineType)
+		}
+	}()
 }
 
 // handleUnsubscribe 处理取消订阅请求
@@ -317,6 +324,74 @@ func (h *WSHandler) pushIndicatorUpdates() {
 		}
 		h.checkAndPushUpdates(market, code, klineType)
 	}
+}
+
+// pushIndicatorToClient 向单个客户端推送指标数据
+func (h *WSHandler) pushIndicatorToClient(client *WSClient, market int, code string, klineType int) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("单客户端指标推送panic: market=%d, code=%s, klineType=%d, err=%v", market, code, klineType, r)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	klineReq := &models.KLineRequest{
+		Market:    market,
+		Code:      code,
+		KLineType: models.KLineType(klineType),
+		Weight:    models.WeightNone,
+		Count:     2000,
+	}
+
+	calcReq := &models.IndicatorCalculateRequest{
+		Market:    market,
+		Code:      code,
+		KLineType: models.KLineType(klineType),
+		Weight:    models.WeightNone,
+		Count:     2000,
+		Indicators: []models.IndicatorConfig{
+			{
+				Type: models.IndicatorTypeMoshiChanlun,
+				Params: map[string]interface{}{
+					"kline_type":        klineType,
+					"show_level_sub_x1": true,
+					"show_level_1x":     true,
+					"show_level_2x":     true,
+					"show_level_4x":     true,
+					"show_level_8x":     true,
+				},
+			},
+		},
+	}
+
+	result, err := h.indicatorService.Calculate(ctx, calcReq)
+	if err != nil {
+		log.Printf("订阅后指标计算失败: market=%d, code=%s, err=%v", market, code, err)
+		return
+	}
+
+	klineData, _, err := h.klineService.GetKLineData(ctx, klineReq)
+	if err != nil {
+		log.Printf("订阅后获取K线数据失败: market=%d, code=%s, err=%v", market, code, err)
+		return
+	}
+
+	msg := &WSMessage{
+		Type: "indicator_update",
+		Data: map[string]interface{}{
+			"market":     market,
+			"code":       code,
+			"klinetype":  klineType,
+			"klines":     klineData.KLines,
+			"indicators": result.Indicators,
+		},
+		Timestamp: time.Now().Format(time.RFC3339),
+	}
+
+	h.sendMessage(client, msg)
+	log.Printf("订阅后推送指标: market=%d, code=%s, klineType=%d", market, code, klineType)
 }
 
 // checkAndPushUpdates 检查K线更新并推送指标计算结果
