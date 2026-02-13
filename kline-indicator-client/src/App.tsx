@@ -26,9 +26,19 @@ const MOSHI_CHANLUN_CONFIG: IndicatorConfig = {
   },
 };
 
+// 市场选项
+const MARKET_OPTIONS = [
+  { value: 0, label: '上证指数' },
+  { value: 1, label: '沪市A股' },
+  { value: 1001, label: '深市A股' },
+  { value: 1008, label: '创业板' },
+  { value: 7, label: '科创板' },
+  { value: 1000, label: '深证指数' },
+] as const;
+
 function App() {
   // 股票信息
-  const [market] = useState(0);
+  const [market, setMarket] = useState(0);
   const [stockCode, setStockCode] = useState('000001');
   const [stockInput, setStockInput] = useState('000001');
   
@@ -225,6 +235,15 @@ function App() {
           
           {/* 股票搜索 */}
           <div className="flex items-center gap-2">
+            <select
+              value={market}
+              onChange={(e) => setMarket(Number(e.target.value))}
+              className="px-2 py-1 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-sm"
+            >
+              {MARKET_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
             <input
               type="text"
               value={stockInput}

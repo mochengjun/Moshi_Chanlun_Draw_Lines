@@ -84,12 +84,15 @@ func (c *ExternalAPIClient) buildRequest(req *models.KLineRequest) *models.Exter
 		endTime = time.Now().Format("2006-1-2 15:04:05")
 	}
 	
+	// 根据股票代码自动识别精确市场代码
+	resolvedMarket := models.ResolveMarket(req.Market, req.Code)
+	
 	return &models.ExternalAPIRequest{
 		ReqType: 150,
 		ReqID:   c.getNextReqID(),
 		Session: "",
 		Data: models.ExternalAPIRequestData{
-			Market:    req.Market,
+			Market:    resolvedMarket,
 			Code:      req.Code,
 			KLineType: int(req.KLineType),
 			Weight:    int(req.Weight),

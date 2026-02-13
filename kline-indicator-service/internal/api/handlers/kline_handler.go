@@ -27,7 +27,7 @@ func NewKLineHandler(klineService *service.KLineService) *KLineHandler {
 // @Tags kline
 // @Accept json
 // @Produce json
-// @Param market query int true "市场代码 (0=深市, 1=沪市)"
+// @Param market query int true "市场代码 (0=上证指数, 1=上证A股, 1001=深证A股, 1004=中小企业, 1008=创业板, 7=科创板等)"
 // @Param code query string true "股票代码"
 // @Param klinetype query int true "K线类型 (1=1分钟, 10=日K, 11=周K等)"
 // @Param weight query int false "复权方式 (0=不复权, 1=前复权, 2=后复权)"
