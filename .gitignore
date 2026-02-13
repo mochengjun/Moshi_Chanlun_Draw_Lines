@@ -1,0 +1,24 @@
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志和临时文件
+*.log
+*.tmp
+
+# 编译产物
+*.exe
+kline-indicator-service/main
+
+# 测试结果文件
+test_rest.json
+test_result*.json
+
+# Windows特殊设备文件
+nul

@@ -1,0 +1,18 @@
+# Go编译产物
+*.exe
+*.exe~
+*-test.exe
+
+# 依赖
+vendor/
+
+# 环境配置
+.env
+.env.local
+
+# 日志
+logs/
+*.log
+
+# Windows特殊文件
+nul
