@@ -562,8 +562,11 @@ export default function KLineChart({
     });
   }, []);
 
-  // 渲染x1同级别走势区域标记
+  // 渲染x1同级别走势区域标记（已禁用：不显示走势方框）
   const renderSameLevelTrends = useCallback((trends: SameLevelTrend[]) => {
+    // 禁用走势区域显示
+    return;
+    
     if (!chartRef.current || !labelContainerRef.current || trends.length === 0) return;
 
     // 清空之前的元素引用
