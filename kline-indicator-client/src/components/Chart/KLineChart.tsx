@@ -33,7 +33,7 @@ const COLORS = {
 // 莫氏缠论级别颜色配置
 const MOSHI_COLORS: Record<number, { line: string; marker: string; name: string }> = {
   0: { line: '#888888', marker: '#888888', name: 'sub' }, // 灰色 sub-x1 (不画线)
-  1: { line: '#FF6B6B', marker: '#FF6B6B', name: 'x1' },  // 红色
+  1: { line: '#FFD700', marker: '#FFD700', name: 'x1' },  // 黄色
   2: { line: '#FF6B6B', marker: '#FF6B6B', name: 'x2' },  // 红色
   4: { line: '#9B59B6', marker: '#9B59B6', name: 'x4' },  // 紫色
   8: { line: '#3498DB', marker: '#3498DB', name: 'x8' },  // 蓝色
