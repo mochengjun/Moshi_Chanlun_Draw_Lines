@@ -32,22 +32,36 @@ const COLORS = {
 
 // 莫氏缠论级别颜色配置
 const MOSHI_COLORS: Record<number, { line: string; marker: string; name: string }> = {
-  0: { line: '#888888', marker: '#888888', name: 'sub' }, // 灰色 sub-x1
-  1: { line: '#FFD700', marker: '#FFD700', name: 'x1' },  // 金色
+  0: { line: '#888888', marker: '#888888', name: 'sub' }, // 灰色 sub-x1 (不画线)
+  1: { line: '#FF6B6B', marker: '#FF6B6B', name: 'x1' },  // 红色
   2: { line: '#FF6B6B', marker: '#FF6B6B', name: 'x2' },  // 红色
-  4: { line: '#4ECDC4', marker: '#4ECDC4', name: 'x4' },  // 青色
-  8: { line: '#9B59B6', marker: '#9B59B6', name: 'x8' },  // 紫色
+  4: { line: '#9B59B6', marker: '#9B59B6', name: 'x4' },  // 紫色
+  8: { line: '#3498DB', marker: '#3498DB', name: 'x8' },  // 蓝色
 };
 
 // 获取级别线宽
 const getLevelLineWidth = (multiplier: number): 1 | 2 | 3 | 4 => {
   switch (multiplier) {
-    case 1: return 1;
-    case 2: return 2;
-    case 4: return 3;
-    case 8: return 4;
+    case 1: return 1;  // x1: 较细
+    case 2: return 2;  // x2: 中等
+    case 4: return 3;  // x4: 较粗
+    case 8: return 4;  // x8: 最粗
     default: return 2;
   }
+};
+
+// 获取级别标签距离K线的偏移量（像素）
+const getLevelLabelOffset = (multiplier: number, isUp: boolean): number => {
+  // 基础偏移：高点向上(-), 低点向下(+)
+  const baseOffsets: Record<number, number> = {
+    0: 8,   // sub-x1: 紧贴K线
+    1: 16,  // x1: 较近
+    2: 24,  // x2: 适中
+    4: 32,  // x4: 较远
+    8: 42,  // x8: 最远
+  };
+  const offset = baseOffsets[multiplier] ?? 20;
+  return isUp ? -offset : offset;
 };
 
 export default function KLineChart({ 
@@ -228,7 +242,7 @@ export default function KLineChart({
 
       // 更新高低点标签位置
       pointLabelElementsRef.current.forEach((item: any) => {
-        const { label, time, price, isUp, stackOffset = 0 } = item;
+        const { label, time, price, stackOffset = 0 } = item;
         const x = timeScale.timeToCoordinate(time);
         const y = candlestickSeriesRef.current!.priceToCoordinate(price);
         
@@ -239,9 +253,8 @@ export default function KLineChart({
         
         label.style.display = 'block';
         label.style.left = `${x}px`;
-        // 高点标签在K线上方，低点标签在K线下方，加上堆叠偏移
-        const baseOffset = isUp ? -20 : 8;
-        label.style.top = `${y + baseOffset + stackOffset}px`;
+        // 使用保存的级别偏移量（小级别靠近K线，大级别远离K线）
+        label.style.top = `${y + stackOffset}px`;
       });
     };
 
@@ -447,30 +460,9 @@ export default function KLineChart({
         const endTime = new Date(bi.end_timestamp).getTime();
         if (startTime === endTime) return;
 
-        // sub-x1级别(multiplier=0)：画虚线连接线 + 长度数值标注
+        // sub-x1级别(multiplier=0)：仅显示数字标记，不画连接线
         if (mult === 0) {
-          const lineSeries = chartRef.current!.addLineSeries({
-            color: colorConfig.line,
-            lineWidth: 1,
-            lineStyle: 2, // Dashed
-            priceLineVisible: false,
-            lastValueVisible: false,
-            crosshairMarkerVisible: false,
-          });
-
-          const lineData: LineData[] = [
-            {
-              time: (new Date(bi.start_timestamp).getTime() / 1000) as Time,
-              value: bi.start_price,
-            },
-            {
-              time: (new Date(bi.end_timestamp).getTime() / 1000) as Time,
-              value: bi.end_price,
-            },
-          ];
-
-          lineSeries.setData(lineData);
-          lineSeriesRef.current.set(`moshi_bi_${mult}_${idx}`, lineSeries);
+          // 不画连接线，只收集标签信息
         } else {
           // 添加连接线（仅 x1 及以上级别）
           const lineSeries = chartRef.current!.addLineSeries({
@@ -525,10 +517,10 @@ export default function KLineChart({
 
     // 为每组标签创建元素，处理垂直偏移
     positionGroups.forEach((group) => {
-      // 按级别从大到小排序（高级别在最外侧）
-      group.sort((a, b) => b.mult - a.mult);
+      // 按级别从小到大排序（小级别靠近K线，大级别远离K线）
+      group.sort((a, b) => a.mult - b.mult);
 
-      group.forEach((info, groupIdx) => {
+      group.forEach((info) => {
         const labelEl = document.createElement('div');
         labelEl.style.cssText = `
           position: absolute;
@@ -546,25 +538,25 @@ export default function KLineChart({
         const y = candlestickSeriesRef.current!.priceToCoordinate(info.price);
 
         if (x !== null && y !== null) {
-          // 计算垂直偏移：每个标签错开14px
-          const baseOffset = info.isUp ? -20 : 8;
-          const stackOffset = info.isUp ? -groupIdx * 14 : groupIdx * 14;
+          // 根据级别计算垂直偏移：小级别靠近K线，大级别远离K线
+          const levelOffset = getLevelLabelOffset(info.mult, info.isUp);
           labelEl.style.left = `${x}px`;
-          labelEl.style.top = `${y + baseOffset + stackOffset}px`;
+          labelEl.style.top = `${y + levelOffset}px`;
         } else {
           labelEl.style.display = 'none';
         }
 
         labelContainerRef.current!.appendChild(labelEl);
 
-        // 保存元素引用，包含堆叠偏移信息
+        // 保存元素引用，包含级别偏移信息
         pointLabelElementsRef.current.push({
           label: labelEl,
           time: info.time,
           price: info.price,
           isUp: info.isUp,
           color: info.color,
-          stackOffset: info.isUp ? -groupIdx * 14 : groupIdx * 14,
+          mult: info.mult,
+          stackOffset: getLevelLabelOffset(info.mult, info.isUp),
         } as any);
       });
     });
