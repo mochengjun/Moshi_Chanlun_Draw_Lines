@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { KLine, IndicatorResult, BiMarker, MoshiMarkPoint } from '../../types';
+import type { KLine, IndicatorResult, BiMarker, MoshiMarkPoint, SameLevelTrend } from '../../types';
 
 interface ExportDialogProps {
   isOpen: boolean;
@@ -20,6 +20,7 @@ function getIndicatorSummary(indicators: IndicatorResult[]): string[] {
     if (ind.fractal_markers?.length) parts.push(`${ind.fractal_markers.length}个标注点`);
     if (ind.bi_markers?.length) parts.push(`${ind.bi_markers.length}条笔`);
     if (ind.extra?.mark_points?.length) parts.push(`${ind.extra.mark_points.length}个详细点`);
+    if (ind.extra?.same_level_trends?.length) parts.push(`${ind.extra.same_level_trends.length}段走势`);
     lines.push(parts.join(' / '));
   });
   return lines;
@@ -267,6 +268,41 @@ function generateCSV(
       sections.push('=== 笔标记数据 ===');
       sections.push([biHeaders.join(','), ...biRows].join('\n'));
     }
+
+    // === 第三部分：同级别走势数据 ===
+    const allTrends: SameLevelTrend[] = [];
+    indicators.forEach((ind) => {
+      if (ind.extra?.same_level_trends) {
+        allTrends.push(...ind.extra.same_level_trends);
+      }
+    });
+
+    if (allTrends.length > 0) {
+      const trendHeaders = [
+        '方向', '形态', '级别', '起始时间', '结束时间',
+        '最高价', '最低价', '点数', '已升级',
+      ];
+
+      const patternNames: Record<string, string> = {
+        trend: '趋势', convergent: '收敛中枢', divergent: '扩张中枢',
+      };
+
+      const trendRows = allTrends.map((t) => [
+        t.type === 'up' ? '上涨' : '下跌',
+        patternNames[t.pattern] || t.pattern,
+        `x${t.multiplier}`,
+        escapeCSV(t.start_timestamp),
+        escapeCSV(t.end_timestamp),
+        t.high_point.price.toString(),
+        t.low_point.price.toString(),
+        t.points.length.toString(),
+        t.upgraded ? '是' : '否',
+      ].join(','));
+
+      sections.push('');
+      sections.push('=== 同级别走势数据 ===');
+      sections.push([trendHeaders.join(','), ...trendRows].join('\n'));
+    }
   }
 
   return sections.join('\n');
@@ -299,6 +335,7 @@ function generateJSON(
         fractal_markers: moshi.fractal_markers || [],
         levels: moshi.extra?.levels || [],
         kline_type: moshi.extra?.kline_type,
+        same_level_trends: moshi.extra?.same_level_trends || [],
       };
     }
   }

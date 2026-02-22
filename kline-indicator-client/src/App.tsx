@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import KLineChart from './components/Chart/KLineChart';
 import TimeframeSwitcher from './components/Chart/TimeframeSwitcher';
+import LevelToggle from './components/Indicator/LevelToggle';
+import type { LevelConfig } from './components/Indicator/LevelToggle';
 import ExportDialog from './components/DataExport/ExportDialog';
 import NetworkStatus from './components/StatusBar/NetworkStatus';
 import { fetchKLineData, calculateIndicators } from './services/api';
@@ -13,17 +15,13 @@ import type {
   IndicatorResult, 
 } from './types';
 
-// 莫氏缠论默认配置：四个级别全部开启，sub-x1默认关闭
-const MOSHI_CHANLUN_CONFIG: IndicatorConfig = {
-  type: 'moshi_chanlun',
-  params: {
-    kline_type: 10,
-    show_level_sub_x1: true,
-    show_level_1x: true,
-    show_level_2x: true,
-    show_level_4x: true,
-    show_level_8x: true,
-  },
+// 默认级别配置
+const DEFAULT_LEVELS: LevelConfig = {
+  show_level_sub_x1: true,
+  show_level_1x: true,
+  show_level_2x: true,
+  show_level_4x: true,
+  show_level_8x: true,
 };
 
 // 市场选项
@@ -51,6 +49,10 @@ function App() {
   // 数据
   const [klines, setKlines] = useState<KLine[]>([]);
   const [indicators, setIndicators] = useState<IndicatorResult[]>([]);
+  
+  // 级别显示控制
+  const [levelConfig, setLevelConfig] = useState<LevelConfig>(DEFAULT_LEVELS);
+  const [showTrends, setShowTrends] = useState(true);
   
   // 状态
   const [loading, setLoading] = useState(false);
@@ -119,10 +121,13 @@ function App() {
       return;
     }
     
-    // 同步 kline_type 参数与当前时间周期
+    // 同步 kline_type 和级别配置
     const config: IndicatorConfig = {
-      ...MOSHI_CHANLUN_CONFIG,
-      params: { ...MOSHI_CHANLUN_CONFIG.params, kline_type: timeframe },
+      type: 'moshi_chanlun',
+      params: {
+        kline_type: timeframe,
+        ...levelConfig,
+      },
     };
 
     try {
@@ -142,7 +147,7 @@ function App() {
       console.error('计算指标失败:', err);
       setIndicators([]);
     }
-  }, [market, stockCode, timeframe, weight, count, klines.length]);
+  }, [market, stockCode, timeframe, weight, count, klines.length, levelConfig]);
 
   // 加载数据
   useEffect(() => {
@@ -266,6 +271,14 @@ function App() {
             onTimeframeChange={setTimeframe}
           />
           
+          {/* 级别显示切换 */}
+          <LevelToggle
+            levels={levelConfig}
+            showTrends={showTrends}
+            onLevelsChange={setLevelConfig}
+            onShowTrendsChange={setShowTrends}
+          />
+          
           {/* K线数量选择 */}
           <div className="flex items-center gap-1">
             <span className="text-gray-400 text-sm">数量:</span>
@@ -342,6 +355,7 @@ function App() {
             <KLineChart 
               klines={klines} 
               indicators={indicators}
+              showTrends={showTrends}
               height={700}
             />
             {loading && (
