@@ -14,7 +14,7 @@ import path from 'path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.resolve(__dirname, '../cpp-trading-system/build/calculator_cli');
-const PORT = 8090;
+const PORT = 5173;
 
 // ============================================================================
 // Sample K-line data generation
@@ -417,12 +417,25 @@ setInterval(async () => {
 }, 30000);
 
 // ============================================================================
+// Serve frontend static files
+// ============================================================================
+
+const DIST_PATH = path.resolve(__dirname, '../kline-indicator-client/dist');
+app.use(express.static(DIST_PATH));
+
+// SPA fallback: any non-API route serves index.html
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(DIST_PATH, 'index.html'));
+});
+
+// ============================================================================
 // Start server
 // ============================================================================
 
-server.listen(PORT, () => {
-  console.log(`Moshi Chanlun API Server running on http://localhost:${PORT}`);
-  console.log(`WebSocket endpoint: ws://localhost:${PORT}/ws/kline`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Moshi Chanlun Server running on http://0.0.0.0:${PORT}`);
+  console.log(`Frontend: http://localhost:${PORT}/`);
+  console.log(`WebSocket: ws://localhost:${PORT}/ws/kline`);
   console.log(`Calculator CLI: ${CLI_PATH}`);
   console.log('---');
   console.log('API Endpoints:');
