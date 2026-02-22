@@ -5,6 +5,7 @@ import type { KLine, IndicatorResult, FractalMarker, BiMarker, SameLevelTrend } 
 interface KLineChartProps {
   klines: KLine[];
   indicators?: IndicatorResult[];
+  showTrends?: boolean;
   height?: number;
   onCrosshairMove?: (time: Time | null, price: number | null) => void;
 }
@@ -52,6 +53,7 @@ const getLevelLineWidth = (multiplier: number): 1 | 2 | 3 | 4 => {
 export default function KLineChart({ 
   klines, 
   indicators = [],
+  showTrends = true,
   height = 600,
   onCrosshairMove 
 }: KLineChartProps) {
@@ -339,7 +341,10 @@ export default function KLineChart({
       // 莫氏缠论指标特殊处理
       if (indicator.type === 'moshi_chanlun' && indicator.bi_markers) {
         addMoshiBiMarkers(indicator.bi_markers, klines);
-        // 走势区域标记已移除，保持界面简洁
+        // 渲染同级别走势区域（受showTrends开关控制）
+        if (showTrends && indicator.extra?.same_level_trends) {
+          renderSameLevelTrends(indicator.extra.same_level_trends);
+        }
       } else {
         // 添加普通分型标记
         if (indicator.fractal_markers) {
@@ -351,7 +356,7 @@ export default function KLineChart({
         }
       }
     });
-  }, [indicators, klines]);
+  }, [indicators, klines, showTrends]);
 
   // 添加分型标记
   const addFractalMarkers = useCallback((markers: FractalMarker[]) => {
