@@ -14,7 +14,7 @@ import path from 'path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.resolve(__dirname, '../cpp-trading-system/build/calculator_cli');
-const PORT = 8090;
+const PORT = 5173;
 
 // ============================================================================
 // Sample K-line data generation
