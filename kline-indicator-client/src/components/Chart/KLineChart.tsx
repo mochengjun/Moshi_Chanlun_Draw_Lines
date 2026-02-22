@@ -619,8 +619,6 @@ export default function KLineChart({
       trendBg.style.cssText = `
         position: absolute;
         background: ${color};
-        border-left: 2px dashed ${borderColor};
-        border-right: 2px dashed ${borderColor};
         pointer-events: none;
         z-index: 1;
       `;

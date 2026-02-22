@@ -16,6 +16,141 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_PATH = path.resolve(__dirname, '../cpp-trading-system/build/calculator_cli');
 const PORT = 5173;
 
+// Data source configuration - 点证API
+const DATA_SOURCE_URL = 'http://101.201.37.86:8501';
+
+// Request ID counter
+let reqIdCounter = 1;
+
+// ============================================================================
+// Market code resolution (based on stock code prefix)
+// ============================================================================
+
+const MarketCodes = {
+  SH_INDEX: 0,     // 上证指数
+  SH_A: 1,         // 上证A股
+  SH_B: 2,         // 上证B股
+  STAR: 7,         // 科创板
+  SZ_INDEX: 1000,  // 深证指数
+  SZ_A: 1001,      // 深证A股
+  SZ_B: 1002,      // 深证B股
+  GEM: 1008,       // 创业板
+};
+
+function resolveMarket(market, code) {
+  // If already precise market code (>=2), use directly
+  if (market >= 2) return market;
+  if (!code || code.length < 3) return market;
+
+  const prefix3 = code.slice(0, 3);
+  const prefix2 = code.slice(0, 2);
+
+  // 创业板: 300xxx, 301xxx
+  if (prefix3 === '300' || prefix3 === '301') return MarketCodes.GEM;
+  // 科创板: 688xxx, 689xxx
+  if (prefix3 === '688' || prefix3 === '689') return MarketCodes.STAR;
+  // 深证A股: 002xxx, 003xxx
+  if (prefix3 === '002' || prefix3 === '003') return MarketCodes.SZ_A;
+  // 深证指数: 399xxx
+  if (prefix3 === '399') return MarketCodes.SZ_INDEX;
+  // 上证B股: 900xxx
+  if (prefix3 === '900') return MarketCodes.SH_B;
+  // 深证B股: 200xxx
+  if (prefix3 === '200') return MarketCodes.SZ_B;
+  // 沪市个股: 600xxx, 601xxx, 603xxx, 605xxx
+  if (prefix2 === '60') return MarketCodes.SH_A;
+  // 上证指数: 000xxx (when market=0)
+  if (prefix3 === '000' && market === 0) return MarketCodes.SH_INDEX;
+  // 深证A股: 000xxx, 001xxx (when market=1)
+  if ((prefix3 === '000' || prefix3 === '001') && market === 1) return MarketCodes.SZ_A;
+
+  return market;
+}
+
+// ============================================================================
+// Real K-line data fetching from 点证 API
+// ============================================================================
+
+/**
+ * Fetch K-line data from 点证 API using POST request
+ */
+async function fetchKLineFromAPI(market, code, klineType, count, weight = 0) {
+  const resolvedMarket = resolveMarket(market, code);
+  const now = new Date();
+  const endTime = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()} ${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`;
+  
+  const requestBody = {
+    reqtype: 150,
+    reqid: reqIdCounter++,
+    session: '',
+    data: {
+      market: resolvedMarket,
+      code: code,
+      klinetype: klineType,
+      weight: weight,
+      timetype: 2,  // 往前count条
+      time0: endTime,
+      count: count,
+    },
+  };
+
+  try {
+    const response = await fetch(DATA_SOURCE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(10000), // 10s timeout
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API returned HTTP ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Check status (0 = success)
+    if (data.status !== 0) {
+      throw new Error(data.msg || `API status ${data.status}`);
+    }
+    
+    // Parse kline data from response
+    const klineList = data.data?.kline;
+    if (!klineList || klineList.length < 2) {
+      throw new Error('Empty kline data');
+    }
+    
+    // Skip header row (index 0), parse data rows
+    const klines = [];
+    for (let i = 1; i < klineList.length; i++) {
+      const row = klineList[i];
+      if (row.length < 6) continue;
+      
+      klines.push({
+        timestamp: row[0],
+        open: parseFloat(row[1]) || 0,
+        high: parseFloat(row[2]) || 0,
+        low: parseFloat(row[3]) || 0,
+        close: parseFloat(row[4]) || 0,
+        volume: parseInt(row[5]) || 0,
+        amount: row.length > 6 ? parseFloat(row[6]) || 0 : 0,
+      });
+    }
+    
+    console.log(`Fetched ${klines.length} klines from 点证 API for ${code} (market=${resolvedMarket})`);
+    return {
+      klines: klines,
+      name: code,
+      fromAPI: true,
+    };
+  } catch (err) {
+    console.warn(`Failed to fetch from 点证 API: ${err.message}, falling back to generated data`);
+    return null;
+  }
+}
+
 // ============================================================================
 // Sample K-line data generation
 // ============================================================================
@@ -174,14 +309,29 @@ function getCacheKey(market, code, klineType) {
   return `${market}_${code}_${klineType}`;
 }
 
-function getOrGenerateKlines(market, code, klineType, count) {
+/**
+ * Get K-line data: first try 点证 API, fallback to generated data
+ */
+async function getOrGenerateKlines(market, code, klineType, count, weight = 0) {
   const key = getCacheKey(market, code, klineType);
+  
+  // Try to fetch from 点证 API first
+  const apiResult = await fetchKLineFromAPI(market, code, klineType, count, weight);
+  
+  if (apiResult && apiResult.klines && apiResult.klines.length > 0) {
+    // Cache the real data
+    klineCache.set(key, { klines: apiResult.klines, name: apiResult.name, fromAPI: true });
+    return apiResult;
+  }
+  
+  // Fallback to cached or generated data
   let cached = klineCache.get(key);
-  if (!cached || cached.length < count) {
-    cached = generateKLineData(count, klineType);
+  if (!cached || cached.klines.length < count) {
+    cached = { klines: generateKLineData(count, klineType), name: getStockName(market, code), fromAPI: false };
     klineCache.set(key, cached);
   }
-  return cached.slice(0, count);
+  
+  return { klines: cached.klines.slice(0, count), name: cached.name, fromAPI: cached.fromAPI };
 }
 
 // ============================================================================
@@ -197,13 +347,14 @@ app.get('/api/v1/health', (_req, res) => {
 });
 
 // Get K-line data
-app.get('/api/v1/kline', (req, res) => {
+app.get('/api/v1/kline', async (req, res) => {
   const market = parseInt(req.query.market) || 0;
   const code = req.query.code || '000001';
   const klineType = parseInt(req.query.klinetype) || 10;
   const count = Math.min(Math.max(parseInt(req.query.count) || 2000, 10), 5000);
+  const weight = parseInt(req.query.weight) || 0;
 
-  const klines = getOrGenerateKlines(market, code, klineType, count);
+  const result = await getOrGenerateKlines(market, code, klineType, count, weight);
 
   res.json({
     code: 0,
@@ -211,12 +362,13 @@ app.get('/api/v1/kline', (req, res) => {
     data: {
       market,
       code,
-      name: getStockName(market, code),
+      name: result.name,
       klinetype: klineType,
-      weight: parseInt(req.query.weight) || 0,
-      klines,
-      count: klines.length,
+      weight,
+      klines: result.klines,
+      count: result.klines.length,
     },
+    data_source: result.fromAPI ? '点证API' : 'generated',
     cache_hit: klineCache.has(getCacheKey(market, code, klineType)),
   });
 });
@@ -228,7 +380,8 @@ app.post('/api/v1/indicators/calculate', async (req, res) => {
   const klineType = klinetype || 10;
   const klineCount = Math.min(Math.max(count || 2000, 10), 5000);
 
-  const klines = getOrGenerateKlines(market || 0, code || '000001', klineType, klineCount);
+  const klineResult = await getOrGenerateKlines(market || 0, code || '000001', klineType, klineCount);
+  const klines = klineResult.klines;
 
   const t0 = Date.now();
   const results = [];
@@ -265,6 +418,7 @@ app.post('/api/v1/indicators/calculate', async (req, res) => {
     message: 'success',
     stock_code: code || '000001',
     indicators: results,
+    data_source: klineResult.fromAPI ? '点证API' : 'generated',
     computation_time_ms: Date.now() - t0,
   });
 });
@@ -377,7 +531,8 @@ setInterval(async () => {
 
     for (const sub of subscriptions) {
       try {
-        const klines = getOrGenerateKlines(sub.market, sub.code, sub.klinetype, 2000);
+        const klineResult = await getOrGenerateKlines(sub.market, sub.code, sub.klinetype, 2000);
+        const klines = [...klineResult.klines]; // Clone to avoid mutating cache
 
         // Add a small random change to the last kline to simulate real-time
         const last = { ...klines[klines.length - 1] };
