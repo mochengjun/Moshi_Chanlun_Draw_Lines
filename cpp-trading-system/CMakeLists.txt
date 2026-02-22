@@ -11,6 +11,10 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 # Indicator library
 add_subdirectory(src)
 
+# CLI calculator tool
+add_executable(calculator_cli apps/server/calculator_cli.cpp)
+target_link_libraries(calculator_cli moshi_chanlun_indicator)
+
 # Tests
 option(BUILD_TESTS "Build unit tests" ON)
 if(BUILD_TESTS)
