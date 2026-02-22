@@ -524,7 +524,8 @@ wss.on('connection', (ws) => {
   });
 });
 
-// Periodic indicator updates for subscribed clients (every 30 seconds)
+// Periodic indicator updates for subscribed clients
+// 注意：推送功能已暂停（间隔设为1小时，原为30秒）
 setInterval(async () => {
   for (const [ws, subscriptions] of clientSubscriptions.entries()) {
     if (ws.readyState !== WebSocket.OPEN || subscriptions.length === 0) continue;
@@ -569,7 +570,7 @@ setInterval(async () => {
       }
     }
   }
-}, 30000);
+}, 3600000); // 暂停推送：原为30000ms(30秒)，改为3600000ms(1小时)
 
 // ============================================================================
 // Serve frontend static files

@@ -258,8 +258,9 @@ func (h *WSHandler) heartbeatLoop() {
 }
 
 // updateLoop 定时轮询并推送指标更新（仅在交易时间内推送）
+// 注意：推送功能已暂停（间隔设为1小时）
 func (h *WSHandler) updateLoop() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(1 * time.Hour) // 暂停推送：原为30秒，改为1小时
 	defer ticker.Stop()
 
 	for {
