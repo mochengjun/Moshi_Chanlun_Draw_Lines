@@ -9,8 +9,10 @@ interface LevelConfig {
 interface LevelToggleProps {
   levels: LevelConfig;
   showTrends: boolean;
+  showFractal: boolean;
   onLevelsChange: (levels: LevelConfig) => void;
   onShowTrendsChange: (show: boolean) => void;
+  onShowFractalChange: (show: boolean) => void;
 }
 
 const LEVEL_ITEMS: { key: keyof LevelConfig; label: string; color: string }[] = [
@@ -24,8 +26,10 @@ const LEVEL_ITEMS: { key: keyof LevelConfig; label: string; color: string }[] = 
 export default function LevelToggle({
   levels,
   showTrends,
+  showFractal,
   onLevelsChange,
   onShowTrendsChange,
+  onShowFractalChange,
 }: LevelToggleProps) {
   const handleToggle = (key: keyof LevelConfig) => {
     onLevelsChange({ ...levels, [key]: !levels[key] });
@@ -64,6 +68,18 @@ export default function LevelToggle({
         title={`${showTrends ? '隐藏' : '显示'}走势区域`}
       >
         走势
+      </button>
+      <span className="text-gray-600 mx-1">|</span>
+      <button
+        onClick={() => onShowFractalChange(!showFractal)}
+        className={`px-2 py-0.5 text-xs rounded border transition-colors ${
+          showFractal
+            ? 'border-green-500 bg-green-500/10 text-green-400'
+            : 'border-gray-600 text-gray-500 opacity-50'
+        }`}
+        title={`${showFractal ? '隐藏' : '显示'}顶底分型`}
+      >
+        分型
       </button>
     </div>
   );

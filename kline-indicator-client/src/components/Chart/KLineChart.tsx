@@ -6,6 +6,7 @@ interface KLineChartProps {
   klines: KLine[];
   indicators?: IndicatorResult[];
   showTrends?: boolean;
+  showFractal?: boolean;
   height?: number;
   onCrosshairMove?: (time: Time | null, price: number | null) => void;
 }
@@ -82,6 +83,7 @@ export default function KLineChart({
   klines, 
   indicators = [],
   showTrends = true,
+  showFractal = true,
   height = 600,
   onCrosshairMove 
 }: KLineChartProps) {
@@ -99,6 +101,8 @@ export default function KLineChart({
   const pointLabelElementsRef = useRef<{ label: HTMLDivElement; time: Time; price: number; isUp: boolean; color: string; mult: number }[]>([]);
   // 存储分型标记元素引用
   const fractalMarkerElementsRef = useRef<{ marker: HTMLDivElement; tooltip: HTMLDivElement; time: Time; price: number; type: 'top' | 'bottom'; timestamp: string }[]>([]);
+  // 保存showFractal的引用
+  const showFractalRef = useRef(showFractal);
 
   // 初始化图表
   useEffect(() => {
@@ -275,9 +279,16 @@ export default function KLineChart({
         label.style.top = `${y + levelOffset}px`;
       });
 
-      // 更新分型标记位置
+      // 更新分型标记位置（根据showFractalRef控制显示/隐藏）
       fractalMarkerElementsRef.current.forEach((item) => {
         const { marker, tooltip, time, price, type } = item;
+        
+        if (!showFractalRef.current) {
+          marker.style.display = 'none';
+          tooltip.style.display = 'none';
+          return;
+        }
+        
         const x = timeScale.timeToCoordinate(time);
         const y = candlestickSeriesRef.current!.priceToCoordinate(price);
         
@@ -368,6 +379,8 @@ export default function KLineChart({
     pointLabelElementsRef.current = [];
     // 清除分型标记元素引用
     fractalMarkerElementsRef.current = [];
+    // 更新showFractal引用
+    showFractalRef.current = showFractal;
 
     // 添加新的指标线
     indicators.forEach((indicator) => {
@@ -416,6 +429,22 @@ export default function KLineChart({
       }
     });
   }, [indicators, klines, showTrends]);
+
+  // 监听showFractal变化，控制分型标记的显示/隐藏
+  useEffect(() => {
+    showFractalRef.current = showFractal;
+    
+    fractalMarkerElementsRef.current.forEach((item) => {
+      const { marker, tooltip } = item;
+      if (showFractal) {
+        marker.style.display = 'block';
+        tooltip.style.display = 'none'; // 默认隐藏tooltip，悬停时显示
+      } else {
+        marker.style.display = 'none';
+        tooltip.style.display = 'none';
+      }
+    });
+  }, [showFractal]);
 
   // 添加分型标记（使用自定义DOM元素实现三角形标记）
   const addFractalMarkers = useCallback((markers: FractalMarker[]) => {

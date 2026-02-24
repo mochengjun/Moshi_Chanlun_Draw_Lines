@@ -53,6 +53,7 @@ function App() {
   // 级别显示控制
   const [levelConfig, setLevelConfig] = useState<LevelConfig>(DEFAULT_LEVELS);
   const [showTrends, setShowTrends] = useState(true);
+  const [showFractal, setShowFractal] = useState(true);
   
   // 状态
   const [loading, setLoading] = useState(false);
@@ -275,8 +276,10 @@ function App() {
           <LevelToggle
             levels={levelConfig}
             showTrends={showTrends}
+            showFractal={showFractal}
             onLevelsChange={setLevelConfig}
             onShowTrendsChange={setShowTrends}
+            onShowFractalChange={setShowFractal}
           />
           
           {/* K线数量选择 */}
@@ -356,6 +359,7 @@ function App() {
               klines={klines} 
               indicators={indicators}
               showTrends={showTrends}
+              showFractal={showFractal}
               height={700}
             />
             {loading && (
