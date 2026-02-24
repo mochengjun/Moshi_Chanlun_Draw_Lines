@@ -1,0 +1,32 @@
+server:
+  port: 8080
+  mode: release
+  # 监听所有网络接口 (0.0.0.0) - 默认已配置，无需修改
+
+# C++ calculator_cli path (relative to working directory or absolute)
+cpp_calculator:
+  cli_path: "../cpp-trading-system/build/calculator_cli"
+
+external_api:
+  url: "http://101.201.37.86:8501"
+  timeout: 5s
+  max_retries: 3
+
+redis:
+  addr: ""
+  password: ""
+  db: 0
+  pool_size: 100
+
+cache:
+  memory_size: 1000
+  memory_ttl: 5m
+  redis_ttl: 30m
+
+rate_limit:
+  requests_per_second: 100
+  burst: 200
+
+auth:
+  jwt_secret: "your-secret-key-change-in-production"
+  token_expire: 24h
