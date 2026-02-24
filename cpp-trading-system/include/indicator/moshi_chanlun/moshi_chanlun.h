@@ -18,8 +18,16 @@ public:
 
     // ====== Step 1: K线包含关系处理 ======
 
-    /// 处理K线包含关系，将具有包含关系的相邻K线合并
+    /// 处理K线包含关系，将具有包含关系的相邻K线合并（兼容旧版）
     std::vector<MergedKLine> removeContainment(const std::vector<KLine>& klines) const;
+
+    /// 同步处理K线包含关系与分型识别
+    /// 在处理包含关系的过程中同时识别分型，确定趋势方向
+    /// - 形成顶分型时确定方向向下，后续包含关系按下降趋势处理
+    /// - 形成底分型时确定方向向上，后续包含关系按上升趋势处理
+    /// - 顶底分型之间可以共用同一根K线
+    std::vector<MergedKLine> removeContainmentSync(const std::vector<KLine>& klines,
+                                                    std::vector<MarkPoint>& fractals) const;
 
     // ====== Step 2: 顶底分型识别 ======
 
@@ -80,9 +88,14 @@ private:
     // ---- 包含关系辅助 ----
     static bool hasContainment(double h1, double l1, double h2, double l2);
     /// 确定包含关系合并方向
-    /// - 无包含关系时：high2>high1且low2>low1返回"UP"，high2<high1且low2<low1返回"DOWN"
-    /// - 有包含关系时：比较最高点确定方向
-    static std::string determineMergeDirection(const std::vector<MergedKLine>& merged);
+    /// - currentTrend为UNDEFINED时：根据前后K线变化确定方向
+    /// - currentTrend为UP/DOWN时：使用当前趋势方向
+    static std::string determineMergeDirection(const std::vector<MergedKLine>& merged,
+                                              const std::string& currentTrend);
+    /// 检查是否形成新的分型，更新趋势方向
+    /// 返回值：true-形成新分型并更新了趋势
+    static bool checkAndUpdateTrend(const std::vector<MergedKLine>& merged,
+                                    std::string& currentTrend);
 
     // ---- 级别递推辅助 ----
     struct ScanResult {
