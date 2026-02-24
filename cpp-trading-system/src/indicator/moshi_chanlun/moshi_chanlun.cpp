@@ -126,6 +126,27 @@ IndicatorResult MoshiChanlunCalculator::calculate(
     result.sameLevelTrends.insert(result.sameLevelTrends.end(), x2Trends.begin(), x2Trends.end());
     result.sameLevelTrends.insert(result.sameLevelTrends.end(), x4Trends.begin(), x4Trends.end());
 
+    // 收集分型标记（从sub-x1点中提取）
+    for (const auto& mp : subX1Points) {
+        FractalMarker fm;
+        fm.index = mp.index;
+        fm.timestamp = mp.timestamp;
+        fm.price = mp.price;
+        fm.type = (mp.type == PointType::H) ? "top" : "bottom";
+        
+        // 查找相邻K线确定区间
+        if (mp.index > 0 && mp.index < static_cast<int>(klines.size())) {
+            if (mp.type == PointType::H) {
+                fm.zoneHigh = mp.price;
+                fm.zoneLow = klines[mp.index].low;
+            } else {
+                fm.zoneLow = mp.price;
+                fm.zoneHigh = klines[mp.index].high;
+            }
+        }
+        result.fractalMarkers.push_back(fm);
+    }
+
     return result;
 }
 

@@ -36,6 +36,19 @@ struct MarkPoint {
 };
 
 // ============================================================================
+// 分型标记（用于前端显示）
+// ============================================================================
+
+struct FractalMarker {
+    int         index      = 0;       // 原始K线索引
+    std::string timestamp;
+    std::string type;                 // "top" / "bottom"
+    double      price      = 0.0;
+    double      zoneLow    = 0.0;
+    double      zoneHigh   = 0.0;
+};
+
+// ============================================================================
 // 无包含关系的合并K线
 // ============================================================================
 
@@ -77,6 +90,7 @@ struct IndicatorResult {
     std::vector<MarkPoint>      markPoints;
     std::vector<SameLevelTrend> sameLevelTrends;
     std::vector<int>            activeLevels;
+    std::vector<FractalMarker>  fractalMarkers;  // 顶底分型标记
     int                         klineType = 10;
 };
 

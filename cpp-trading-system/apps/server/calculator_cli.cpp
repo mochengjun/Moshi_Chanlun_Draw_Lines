@@ -69,6 +69,16 @@ static json sameLevelTrendToJson(const SameLevelTrend& t) {
     return result;
 }
 
+static json fractalMarkerToJson(const FractalMarker& fm) {
+    return {
+        {"index", fm.index},
+        {"timestamp", fm.timestamp},
+        {"type", fm.type},
+        {"price", fm.price},
+        {"zone", {fm.zoneLow, fm.zoneHigh}}
+    };
+}
+
 /// Generate bi_markers from mark_points.
 /// Groups points by multiplier, then creates line segments between consecutive points.
 static json generateBiMarkers(const std::vector<MarkPoint>& markPoints,
@@ -191,10 +201,17 @@ int main() {
 
         json biMarkers = generateBiMarkers(result.markPoints, klines);
 
+        // 生成fractal_markers
+        json fractalMarkersJson = json::array();
+        for (const auto& fm : result.fractalMarkers) {
+            fractalMarkersJson.push_back(fractalMarkerToJson(fm));
+        }
+
         json output = {
             {"type", result.type},
             {"name", result.name},
             {"bi_markers", biMarkers},
+            {"fractal_markers", fractalMarkersJson},
             {"extra", {
                 {"mark_points", markPointsJson},
                 {"kline_type", result.klineType},
