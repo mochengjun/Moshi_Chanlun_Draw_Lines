@@ -396,6 +396,10 @@ export default function KLineChart({
       // 莫氏缠论指标特殊处理
       if (indicator.type === 'moshi_chanlun' && indicator.bi_markers) {
         addMoshiBiMarkers(indicator.bi_markers, klines);
+        // 添加分型标记
+        if (indicator.fractal_markers) {
+          addFractalMarkers(indicator.fractal_markers);
+        }
         // 渲染同级别走势区域（受showTrends开关控制）
         if (showTrends && indicator.extra?.same_level_trends) {
           renderSameLevelTrends(indicator.extra.same_level_trends);
