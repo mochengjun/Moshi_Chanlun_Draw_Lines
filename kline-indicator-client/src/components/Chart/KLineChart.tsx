@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { createChart, IChartApi, ISeriesApi, CandlestickData, LineData, Time, SeriesMarker } from 'lightweight-charts';
+import { createChart, IChartApi, ISeriesApi, CandlestickData, LineData, Time } from 'lightweight-charts';
 import type { KLine, IndicatorResult, FractalMarker, BiMarker, SameLevelTrend } from '../../types';
 
 interface KLineChartProps {
@@ -37,6 +37,20 @@ const MOSHI_COLORS: Record<number, { line: string; marker: string; name: string 
   2: { line: '#FF6B6B', marker: '#FF6B6B', name: 'x2' },  // 红色
   4: { line: '#9B59B6', marker: '#9B59B6', name: 'x4' },  // 紫色
   8: { line: '#3498DB', marker: '#3498DB', name: 'x8' },  // 蓝色
+};
+
+// 分型标记颜色配置
+const FRACTAL_COLORS = {
+  top: '#ef5350',      // 顶分型：红色
+  bottom: '#26a69a',   // 底分型：绿色
+  topHover: '#ff8a80', // 顶分型悬停
+  bottomHover: '#80cbc4', // 底分型悬停
+};
+
+// 分型标记偏移量（像素）
+const FRACTAL_OFFSET = {
+  top: -25,     // 顶分型在K线上方
+  bottom: 25,   // 底分型在K线下方
 };
 
 // 获取级别线宽
@@ -83,6 +97,8 @@ export default function KLineChart({
   const trendElementsRef = useRef<{ bg: HTMLDivElement; label: HTMLDivElement; trend: SameLevelTrend }[]>([]);
   // 存储高低点标签元素引用
   const pointLabelElementsRef = useRef<{ label: HTMLDivElement; time: Time; price: number; isUp: boolean; color: string; mult: number }[]>([]);
+  // 存储分型标记元素引用
+  const fractalMarkerElementsRef = useRef<{ marker: HTMLDivElement; tooltip: HTMLDivElement; time: Time; price: number; type: 'top' | 'bottom'; timestamp: string }[]>([]);
 
   // 初始化图表
   useEffect(() => {
@@ -258,6 +274,28 @@ export default function KLineChart({
         label.style.left = `${x}px`;
         label.style.top = `${y + levelOffset}px`;
       });
+
+      // 更新分型标记位置
+      fractalMarkerElementsRef.current.forEach((item) => {
+        const { marker, tooltip, time, price, type } = item;
+        const x = timeScale.timeToCoordinate(time);
+        const y = candlestickSeriesRef.current!.priceToCoordinate(price);
+        
+        if (x === null || y === null) {
+          marker.style.display = 'none';
+          tooltip.style.display = 'none';
+          return;
+        }
+        
+        const offset = type === 'top' ? FRACTAL_OFFSET.top : FRACTAL_OFFSET.bottom;
+        
+        marker.style.display = 'block';
+        marker.style.left = `${x}px`;
+        marker.style.top = `${y + offset}px`;
+        
+        tooltip.style.left = `${x + 15}px`;
+        tooltip.style.top = `${y + offset - 10}px`;
+      });
     };
 
     // 订阅可视范围变化（缩放、平移）
@@ -328,6 +366,8 @@ export default function KLineChart({
     trendsDataRef.current = [];
     // 清除高低点标签元素引用
     pointLabelElementsRef.current = [];
+    // 清除分型标记元素引用
+    fractalMarkerElementsRef.current = [];
 
     // 添加新的指标线
     indicators.forEach((indicator) => {
@@ -373,22 +413,117 @@ export default function KLineChart({
     });
   }, [indicators, klines, showTrends]);
 
-  // 添加分型标记
+  // 添加分型标记（使用自定义DOM元素实现三角形标记）
   const addFractalMarkers = useCallback((markers: FractalMarker[]) => {
-    if (!candlestickSeriesRef.current) return;
+    if (!chartRef.current || !candlestickSeriesRef.current || !labelContainerRef.current) return;
 
-    const seriesMarkers: SeriesMarker<Time>[] = markers.map((m) => {
+    const timeScale = chartRef.current.timeScale();
+
+    markers.forEach((m) => {
       const isTop = m.type === 'TOP' || m.type === 'top';
-      return {
-        time: (new Date(m.timestamp).getTime() / 1000) as Time,
-        position: isTop ? 'aboveBar' as const : 'belowBar' as const,
-        color: isTop ? COLORS.fractalTop : COLORS.fractalBottom,
-        shape: isTop ? 'arrowDown' as const : 'arrowUp' as const,
-        text: isTop ? 'H' : 'L',
-      };
-    });
+      const color = isTop ? FRACTAL_COLORS.top : FRACTAL_COLORS.bottom;
+      const time = (new Date(m.timestamp).getTime() / 1000) as Time;
+      const x = timeScale.timeToCoordinate(time);
+      const y = candlestickSeriesRef.current!.priceToCoordinate(m.price);
 
-    candlestickSeriesRef.current.setMarkers(seriesMarkers);
+      if (x === null || y === null) return;
+
+      const offset = isTop ? FRACTAL_OFFSET.top : FRACTAL_OFFSET.bottom;
+
+      // 创建三角形标记
+      const marker = document.createElement('div');
+      const triangleSize = 12;
+      const triangleColor = color;
+      
+      if (isTop) {
+        // 顶分型：向下三角形
+        marker.style.cssText = `
+          position: absolute;
+          width: 0;
+          height: 0;
+          border-left: ${triangleSize / 2}px solid transparent;
+          border-right: ${triangleSize / 2}px solid transparent;
+          border-top: ${triangleSize}px solid ${triangleColor};
+          transform: translateX(-50%);
+          pointer-events: auto;
+          cursor: pointer;
+          z-index: 10;
+          filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+        `;
+      } else {
+        // 底分型：向上三角形
+        marker.style.cssText = `
+          position: absolute;
+          width: 0;
+          height: 0;
+          border-left: ${triangleSize / 2}px solid transparent;
+          border-right: ${triangleSize / 2}px solid transparent;
+          border-bottom: ${triangleSize}px solid ${triangleColor};
+          transform: translateX(-50%);
+          pointer-events: auto;
+          cursor: pointer;
+          z-index: 10;
+          filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+        `;
+      }
+
+      marker.style.left = `${x}px`;
+      marker.style.top = `${y + offset}px`;
+
+      // 创建悬停提示
+      const tooltip = document.createElement('div');
+      tooltip.style.cssText = `
+        position: absolute;
+        display: none;
+        background: rgba(30, 30, 30, 0.95);
+        border: 1px solid ${color};
+        border-radius: 4px;
+        padding: 8px 12px;
+        color: #d1d4dc;
+        font-size: 12px;
+        white-space: nowrap;
+        z-index: 100;
+        pointer-events: none;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+      `;
+      
+      const fractalType = isTop ? '顶分型' : '底分型';
+      tooltip.innerHTML = `
+        <div style="font-weight:bold;margin-bottom:4px;color:${color}">${fractalType}</div>
+        <div>时间: ${m.timestamp}</div>
+        <div>价格: ${m.price.toFixed(2)}</div>
+        ${m.zone ? `<div>区间: ${m.zone[0].toFixed(2)} - ${m.zone[1].toFixed(2)}</div>` : ''}
+      `;
+      
+      tooltip.style.left = `${x + 15}px`;
+      tooltip.style.top = `${y + offset - 10}px`;
+
+      // 鼠标悬停显示提示
+      marker.addEventListener('mouseenter', () => {
+        tooltip.style.display = 'block';
+        marker.style.transform = 'translateX(-50%) scale(1.2)';
+        marker.style.filter = 'drop-shadow(0 2px 4px rgba(0,0,0,0.6))';
+      });
+      
+      marker.addEventListener('mouseleave', () => {
+        tooltip.style.display = 'none';
+        marker.style.transform = 'translateX(-50%) scale(1)';
+        marker.style.filter = 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))';
+      });
+
+      labelContainerRef.current!.appendChild(marker);
+      labelContainerRef.current!.appendChild(tooltip);
+
+      // 保存元素引用，用于位置更新
+      fractalMarkerElementsRef.current.push({
+        marker,
+        tooltip,
+        time,
+        price: m.price,
+        type: isTop ? 'top' : 'bottom',
+        timestamp: m.timestamp,
+      });
+    });
   }, []);
 
   // 添加普通笔标记（使用线段）
