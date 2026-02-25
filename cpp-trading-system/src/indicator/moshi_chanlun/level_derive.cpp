@@ -9,10 +9,11 @@ namespace moshi {
 // ============================================================================
 // deriveNextLevel - 从前一级别的H/L点推导出下一级别的H/L点
 //
-// 规则:
-//   barCount >= minRetraceBars  → 确认跳级
-//   barCount <  minRetraceBars  → 同级别波动, 合并到前一段
-//   推动段可短于阈值, 回调段必须满足阈值
+// 莫氏缠论级别递推规则:
+//   1. 从sub-x1级别的第一个点开始
+//   2. 使用临时极值点(Hx1temp, Lx1temp)追踪走势
+//   3. 根据K线根数阈值和价格比较确认正式标注点
+//   4. 推动段可短于阈值，回调段必须满足阈值
 // ============================================================================
 std::vector<MarkPoint> MoshiChanlunCalculator::deriveNextLevel(
     const std::vector<MarkPoint>& prevPoints,
@@ -23,128 +24,150 @@ std::vector<MarkPoint> MoshiChanlunCalculator::deriveNextLevel(
 
     std::string level = getLevelName(multiplier);
     std::vector<MarkPoint> result;
-
-    // 添加第一个点作为起点
-    auto first = prevPoints[0];
-    result.push_back({first.type, first.index, first.timestamp, first.price, level, multiplier});
-
-    PointType lastConfirmedType  = first.type;
-    int       lastConfirmedIndex = first.index;
-    double    lastConfirmedPrice = first.price;
-    bool      impulseAllowed     = true; // 推动/回调交替: 首个候选为推动段
-
-    // candidate: 追踪反方向的最佳极值候选
-    struct CandidateInfo {
-        MarkPoint point;
-        bool      valid = false;
-    } candidate;
-
-    for (size_t i = 1; i < prevPoints.size(); ++i) {
-        const auto& pt = prevPoints[i];
-
-        if (pt.type != lastConfirmedType) {
-            // 反方向点: 更新候选极值
-            if (!candidate.valid) {
-                candidate = {pt, true};
+    
+    // 用于追踪临时极值点的索引
+    struct TempPoints {
+        int hx1tempIdx = -1;  // 临时高点在prevPoints中的索引
+        int lx1tempIdx = -1;  // 临时低点在prevPoints中的索引
+        int nextIdx = 0;       // 下一个要处理的prevPoints索引
+    } temp;
+    
+    // 初始化：从第一个点开始，假设为高点则作为Hx1temp1，否则作为Lx1temp1
+    temp.nextIdx = 1;
+    if (prevPoints[0].type == PointType::H) {
+        temp.hx1tempIdx = 0;
+    } else {
+        temp.lx1tempIdx = 0;
+    }
+    
+    // 追踪下跌段最低点/上涨段最高点（基于K线）
+    int klTempIdx = -1;  // 下跌段临时最低点K线索引
+    int khTempIdx = -1;  // 上涨段临时最高点K线索引
+    
+    // 处理主循环
+    while (temp.nextIdx < static_cast<int>(prevPoints.size())) {
+        const auto& pt = prevPoints[temp.nextIdx];
+        
+        // 如果当前点是高点
+        if (pt.type == PointType::H) {
+            if (temp.hx1tempIdx >= 0) {
+                // 更新临时高点：取更高的高点
+                if (pt.price > prevPoints[temp.hx1tempIdx].price) {
+                    temp.hx1tempIdx = temp.nextIdx;
+                }
             } else {
-                bool isMoreExtreme =
-                    (pt.type == PointType::H && pt.price > candidate.point.price) ||
-                    (pt.type == PointType::L && pt.price < candidate.point.price);
-                if (isMoreExtreme) {
-                    // 动态回溯检测
-                    int trendDistance = pt.index - lastConfirmedIndex;
-                    if (trendDistance >= minRetraceBars) {
-                        auto [retroH, retroL] = scanRetroactiveRetrace(
-                            prevPoints, lastConfirmedIndex, pt.index,
-                            lastConfirmedType, minRetraceBars);
-
-                        if (!retroH && !retroL) {
-                            auto [kRetroH, kRetroL] = scanKLineRetrace(
-                                klines, lastConfirmedIndex, pt.index,
-                                lastConfirmedType, minRetraceBars, prevPoints);
-                            retroH = kRetroH;
-                            retroL = kRetroL;
-                        }
-
-                        if (retroH && retroL) {
-                            // 找到合格回调对
-                            if (lastConfirmedType == PointType::L) {
-                                result.push_back({PointType::H, retroH->index, retroH->timestamp,
-                                                  retroH->price, level, multiplier});
-                                result.push_back({PointType::L, retroL->index, retroL->timestamp,
-                                                  retroL->price, level, multiplier});
-                                lastConfirmedType  = PointType::L;
-                                lastConfirmedIndex = retroL->index;
-                                lastConfirmedPrice = retroL->price;
-                            } else {
-                                result.push_back({PointType::L, retroL->index, retroL->timestamp,
-                                                  retroL->price, level, multiplier});
-                                result.push_back({PointType::H, retroH->index, retroH->timestamp,
-                                                  retroH->price, level, multiplier});
-                                lastConfirmedType  = PointType::H;
-                                lastConfirmedIndex = retroH->index;
-                                lastConfirmedPrice = retroH->price;
+                // 第一个高点，作为Hx1temp1或Lx1temp2
+                temp.hx1tempIdx = temp.nextIdx;
+                
+                // 如果有临时低点Lx1temp1，检查是否满足确认条件
+                if (temp.lx1tempIdx >= 0) {
+                    const auto& hx1temp1 = prevPoints[temp.hx1tempIdx];
+                    const auto& lx1temp1 = prevPoints[temp.lx1tempIdx];
+                    
+                    // 从低点Lx1temp1到当前高点Hx1temp2的K线数
+                    int barCount = hx1temp1.index - lx1temp1.index;
+                    
+                    // 检查是否形成有效的上涨段
+                    if (barCount >= minRetraceBars) {
+                        // 查找自Lx1temp1上涨以来的最高点（K线）
+                        int startSearch = lx1temp1.index;
+                        int endSearch = hx1temp1.index;
+                        khTempIdx = startSearch;
+                        for (int i = startSearch + 1; i <= endSearch; ++i) {
+                            if (klines[i].high > klines[khTempIdx].high) {
+                                khTempIdx = i;
                             }
-                            impulseAllowed = true;
-                            candidate = {pt, true};
-                            continue;
-                        } else {
-                            // 未找到中间回调, 直接确认当前更极端的反向点
-                            result.push_back({pt.type, pt.index, pt.timestamp,
-                                              pt.price, level, multiplier});
-                            lastConfirmedType  = pt.type;
-                            lastConfirmedIndex = pt.index;
-                            lastConfirmedPrice = pt.price;
-                            impulseAllowed = false;
-                            candidate.valid = false;
-                            continue;
+                        }
+                        
+                        // 如果KHtemp > Hx1temp1，确认上涨段
+                        if (klines[khTempIdx].high > hx1temp1.price) {
+                            // 确认Lx1temp1、Hx1temp1、Lx1temp2为x1级别点
+                            result.push_back({PointType::L, lx1temp1.index, lx1temp1.timestamp,
+                                              lx1temp1.price, level, multiplier});
+                            result.push_back({PointType::H, hx1temp1.index, hx1temp1.timestamp,
+                                              hx1temp1.price, level, multiplier});
+                            
+                            // 将当前高点作为新的临时高点起点
+                            temp.lx1tempIdx = -1;  // 重置
+                            temp.hx1tempIdx = temp.nextIdx;
                         }
                     }
-                    candidate = {pt, true};
                 }
-            }
-        } else {
-            // 同方向点: 代表从candidate的回调/反弹
-            if (!candidate.valid) continue;
-
-            int barCount = pt.index - candidate.point.index;
-            bool shouldConfirm = false;
-
-            if (barCount >= minRetraceBars * 2) {
-                shouldConfirm = true;
-            } else if (barCount >= minRetraceBars) {
-                shouldConfirm = true;
-            }
-
-            // 推动段规则
-            if (!shouldConfirm && impulseAllowed) {
-                if ((lastConfirmedType == PointType::L && pt.price >= lastConfirmedPrice) ||
-                    (lastConfirmedType == PointType::H && pt.price <= lastConfirmedPrice)) {
-                    shouldConfirm = true;
-                }
-            }
-
-            if (shouldConfirm) {
-                result.push_back({candidate.point.type, candidate.point.index,
-                                  candidate.point.timestamp, candidate.point.price,
-                                  level, multiplier});
-                lastConfirmedType  = candidate.point.type;
-                lastConfirmedIndex = candidate.point.index;
-                lastConfirmedPrice = candidate.point.price;
-                impulseAllowed = !impulseAllowed;
-                candidate = {pt, true};
             }
         }
+        // 如果当前点是低点
+        else {
+            if (temp.lx1tempIdx >= 0) {
+                // 更新临时低点：取更低的低点
+                if (pt.price < prevPoints[temp.lx1tempIdx].price) {
+                    temp.lx1tempIdx = temp.nextIdx;
+                }
+            } else {
+                // 第一个低点，作为Lx1temp1
+                temp.lx1tempIdx = temp.nextIdx;
+                
+                // 如果有临时高点Hx1temp1，检查是否满足确认条件
+                if (temp.hx1tempIdx >= 0) {
+                    const auto& hx1temp1 = prevPoints[temp.hx1tempIdx];
+                    const auto& lx1temp1 = prevPoints[temp.lx1tempIdx];
+                    
+                    // 从高点Hx1temp1到当前低点Lx1temp2的K线数
+                    int barCount = lx1temp1.index - hx1temp1.index;
+                    
+                    // 检查是否形成有效的下跌段
+                    if (barCount >= minRetraceBars) {
+                        // 查找自Hx1temp1下跌以来的最低点（K线）
+                        int startSearch = hx1temp1.index;
+                        int endSearch = lx1temp1.index;
+                        klTempIdx = startSearch;
+                        for (int i = startSearch + 1; i <= endSearch; ++i) {
+                            if (klines[i].low < klines[klTempIdx].low) {
+                                klTempIdx = i;
+                            }
+                        }
+                        
+                        // 如果KLtemp < Lx1temp1，确认下跌段
+                        if (klines[klTempIdx].low < lx1temp1.price) {
+                            // 确认Hx1temp1、Lx1temp1为x1级别点
+                            result.push_back({PointType::H, hx1temp1.index, hx1temp1.timestamp,
+                                              hx1temp1.price, level, multiplier});
+                            result.push_back({PointType::L, lx1temp1.index, lx1temp1.timestamp,
+                                              lx1temp1.price, level, multiplier});
+                            
+                            // 将当前低点作为新的临时低点起点
+                            temp.hx1tempIdx = -1;  // 重置
+                            temp.lx1tempIdx = temp.nextIdx;
+                        }
+                    }
+                }
+            }
+        }
+        
+        temp.nextIdx++;
     }
-
-    // 追加尾部候选点
-    if (candidate.valid && !result.empty() &&
-        candidate.point.type != result.back().type) {
-        result.push_back({candidate.point.type, candidate.point.index,
-                          candidate.point.timestamp, candidate.point.price,
-                          level, multiplier});
+    
+    // 处理尾部：如果有未确认的临时极值点
+    if (temp.hx1tempIdx >= 0 && !result.empty()) {
+        const auto& pt = prevPoints[temp.hx1tempIdx];
+        // 检查是否需要添加（与上一个点类型不同）
+        if (result.back().type != pt.type) {
+            result.push_back({pt.type, pt.index, pt.timestamp, pt.price, level, multiplier});
+        }
     }
-
+    if (temp.lx1tempIdx >= 0 && !result.empty()) {
+        const auto& pt = prevPoints[temp.lx1tempIdx];
+        if (result.back().type != pt.type) {
+            result.push_back({pt.type, pt.index, pt.timestamp, pt.price, level, multiplier});
+        }
+    }
+    
+    // 确保至少包含起始点
+    if (result.empty() && !prevPoints.empty()) {
+        result.push_back({prevPoints[0].type, prevPoints[0].index, 
+                         prevPoints[0].timestamp, prevPoints[0].price, 
+                         level, multiplier});
+    }
+    
     return result;
 }
 
